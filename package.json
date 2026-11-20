@@ -1,0 +1,84 @@
+{
+  "name": "clawd-reminder",
+  "version": "1.0.0",
+  "description": "Clawd нагадує про події з календаря",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node native/build-helper.js && electron .",
+    "test": "node native/build-helper.js && electron . --test",
+    "dist": "node native/build-helper.js && electron-builder --mac"
+  },
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "node-ical": "^0.27.6"
+  },
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  },
+  "productName": "Clawd Reminder",
+  "build": {
+    "appId": "com.clawd.reminder",
+    "productName": "Clawd Reminder",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "afterPack": "build/adhoc-sign.js",
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "identity": null,
+      "category": "public.app-category.productivity",
+      "extendInfo": {
+        "LSUIElement": true,
+        "NSCalendarsUsageDescription": "Clawd читає ваші події, щоб нагадувати про них.",
+        "NSCalendarsFullAccessUsageDescription": "Clawd читає ваші події, щоб нагадувати про них."
+      },
+      "extraResources": [
+        {
+          "from": "build/bin/calendar-helper",
+          "to": "calendar-helper"
+        }
+      ]
+    },
+    "dmg": {
+      "title": "Clawd Reminder",
+      "contents": [
+        {
+          "x": 140,
+          "y": 180
+        },
+        {
+          "x": 400,
+          "y": 180,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "writeUpdateInfo": false
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "build/icon.png"
+    },
+    "artifactName": "${productName}-${version}.${ext}"
+  }
+}

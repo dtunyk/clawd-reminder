@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; }
+  .anchor { position: absolute; }
+  .anchor svg { position: absolute; left: 50%; top: 50%; image-rendering: pixelated; shape-rendering: crispEdges; }
+  .bubble {
+    position: absolute; max-width: 320px; padding: 14px 18px; background: #fff; color: #1a1a1a;
+    border: 4px solid #000; box-shadow: 6px 6px 0 #000; pointer-events: auto; cursor: pointer;
+    opacity: 0; transform: scale(.6); transition: opacity .2s, transform .25s cubic-bezier(.3,1.6,.6,1);
+  }
+  .bubble.show { opacity: 1; transform: scale(1); }
+  .bubble .when { font-weight: 800; font-size: 20px; color: #D97757; }
+  .bubble .title { font-size: 18px; font-weight: 600; margin-top: 4px; word-wrap: break-word; }
+  .bubble .time { font-size: 13px; color: #666; margin-top: 6px; }
+  .bubble .hint { font-size: 11px; color: #aaa; margin-top: 8px; }
+  .legsB, .walking .legsA { display: none; }
+  .walking.step .legsA { display: none; }
+  .walking .legsB { display: inline; }
+  .walking.step .legsB { display: none; }
+  .walking.step .legsA { display: inline; }
+  .arms { transition: transform .12s; }
+  .wave .arms { transform: translateY(-1px); }
+</style>
+</head>
+<body>
+<div class="anchor" id="anchor"></div>
+<div class="bubble" id="bubble">
+  <div class="when" id="when"></div>
+  <div class="title" id="title"></div>
+  <div class="time" id="time"></div>
+  <div class="hint">клікни, щоб сховати</div>
+</div>
+<script>
+const CELL = 12, COLS = 16, ROWS = 10;
+const W = COLS * CELL, H = ROWS * CELL;
+
+// Clawd: тіло, окуляри, руки та два кадри ніг
+const BODY = [
+  '..OOOOOOOOOOOO..',
+  '..OOOOOOOOOOOO..',
+  '..BBBBBBBBBBBB..',
+  '..OOBBBOOBBBOO..',
+  '..OOBBBOOBBBOO..',
+  '..OOOOOOOOOOOO..',
+  '..OOOOOOOOOOOO..',
+  '..OOOOOOOOOOOO..',
+];
+const ARMS = [[5, [0, 1, 14, 15]], [6, [0, 1, 14, 15]]];
+const LEGS_A = [[8, [3, 5, 10, 12]], [9, [3, 5, 10, 12]]];
+const LEGS_B = [[8, [3, 5, 10, 12]], [9, [3, 10]]];
+const COLOR = { O: '#D97757', B: '#000' };
+
+function rects(cells, color) {
+  return cells.map(([r, cs]) => cs.map(c => `<rect x="${c}" y="${r}" width="1" height="1" fill="${color}"/>`).join('')).join('');
+}
+function bodyRects() {
+  let s = '';
+  BODY.forEach((row, r) => [...row].forEach((ch, c) => {
+    if (ch !== '.') s += `<rect x="${c}" y="${r}" width="1.02" height="1.02" fill="${COLOR[ch]}"/>`;
+  }));
+  return s;
+}
+const svg = `<svg id="crab" width="${W}" height="${H}" viewBox="0 0 ${COLS} ${ROWS}">
+  ${bodyRects()}
+  <g class="arms">${rects(ARMS, COLOR.O)}</g>
+  <g class="legsA">${rects(LEGS_A, COLOR.O)}</g>
+  <g class="legsB">${rects(LEGS_B, COLOR.O)}</g>
+</svg>`;
+
+const anchor = document.getElementById('anchor');
+const bubble = document.getElementById('bubble');
+anchor.innerHTML = svg;
+const crab = document.getElementById('crab');
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function chirp() {
+  try {
+    const ctx = new AudioContext();
+    [660, 880, 990].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'square'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.05, ctx.currentTime + i * 0.09);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.09 + 0.08);
+      o.connect(g).connect(ctx.destination);
+      o.start(ctx.currentTime + i * 0.09); o.stop(ctx.currentTime + i * 0.09 + 0.09);
+    });
+  } catch {}
+}
+
+let walkTimer;
+function walk(on) {
+  clearInterval(walkTimer);
+  crab.classList.toggle('walking', on);
+  if (on) walkTimer = setInterval(() => crab.classList.toggle('step'), 110);
+}
+
+async function show({ when, title, time, side, seconds }) {
+  document.getElementById('when').textContent = when;
+  document.getElementById('title').textContent = title;
+  document.getElementById('time').textContent = time ? `початок о ${time}` : '';
+
+  const vw = innerWidth, vh = innerHeight;
+  const vertical = side === 'left' || side === 'right';
+  const aw = vertical ? H : W, ah = vertical ? W : H;
+  // ноги дивляться в бік краю екрана
+  const rot = { bottom: 0, top: 180, left: 90, right: -90 }[side];
+  crab.style.transform = `translate(-50%, -50%) rotate(${rot}deg)`;
+  anchor.style.width = aw + 'px';
+  anchor.style.height = ah + 'px';
+
+  const along = (len, size) => Math.round(len * (0.2 + Math.random() * 0.5) - size / 2);
+  let hidden, shown;
+  if (side === 'bottom') {
+    anchor.style.left = along(vw, aw) + 'px'; anchor.style.top = vh - ah + 'px';
+    hidden = `translateY(${ah + 10}px)`;
+  } else if (side === 'top') {
+    anchor.style.left = along(vw, aw) + 'px'; anchor.style.top = '0px';
+    hidden = `translateY(${-ah - 10}px)`;
+  } else if (side === 'left') {
+    anchor.style.left = '0px'; anchor.style.top = along(vh, ah) + 'px';
+    hidden = `translateX(${-aw - 10}px)`;
+  } else {
+    anchor.style.left = vw - aw + 'px'; anchor.style.top = along(vh, ah) + 'px';
+    hidden = `translateX(${aw + 10}px)`;
+  }
+  shown = 'translate(0, 0)';
+
+  // бульбашка — з боку екрана, а не краю
+  const ax = parseFloat(anchor.style.left), ay = parseFloat(anchor.style.top);
+  const bw = bubble.offsetWidth, bh = bubble.offsetHeight, gap = 18;
+  let bx, by;
+  if (side === 'bottom') { bx = ax + aw / 2 - bw / 2; by = ay - bh - gap; }
+  if (side === 'top') { bx = ax + aw / 2 - bw / 2; by = ay + ah + gap; }
+  if (side === 'left') { bx = ax + aw + gap; by = ay + ah / 2 - bh / 2; }
+  if (side === 'right') { bx = ax - bw - gap; by = ay + ah / 2 - bh / 2; }
+  bubble.style.left = Math.max(10, Math.min(vw - bw - 16, bx)) + 'px';
+  bubble.style.top = Math.max(10, Math.min(vh - bh - 16, by)) + 'px';
+
+  // 1. вилазить
+  walk(true);
+  await anchor.animate([{ transform: hidden }, { transform: shown }],
+    { duration: 700, easing: 'cubic-bezier(.2,.9,.3,1.15)', fill: 'forwards' }).finished;
+  walk(false);
+  chirp();
+
+  // 2. говорить і махає руками
+  bubble.classList.add('show');
+  const waveTimer = setInterval(() => crab.classList.toggle('wave'), 260);
+  let dismissed;
+  const clicked = new Promise(r => (dismissed = r));
+  bubble.onclick = () => dismissed();
+  bubble.onmouseenter = () => api.setInteractive(true);
+  bubble.onmouseleave = () => api.setInteractive(false);
+  await Promise.race([sleep(seconds * 1000), clicked]);
+  clearInterval(waveTimer);
+  crab.classList.remove('wave');
+  api.setInteractive(false);
+
+  // 3. ховається назад
+  bubble.classList.remove('show');
+  await sleep(200);
+  walk(true);
+  await anchor.animate([{ transform: shown }, { transform: hidden }],
+    { duration: 600, easing: 'cubic-bezier(.6,-0.2,.8,.4)', fill: 'forwards' }).finished;
+  walk(false);
+  api.done();
+}
+
+api.onShow(show);
+</script>
+</body>
+</html>

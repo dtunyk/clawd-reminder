@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Clawd-нагадувач</title>
+<style>
+  :root { --bg: #faf7f5; --card: #fff; --text: #1d1d1d; --muted: #777; --line: #e6e0dc; --accent: #D97757; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1b1918; --card: #262321; --text: #eee; --muted: #999; --line: #3a3532; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px; background: var(--bg); color: var(--text);
+         font: 14px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  header h1 { font-size: 20px; margin: 0; }
+  header svg { image-rendering: pixelated; shape-rendering: crispEdges; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+  h2 { font-size: 14px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  input, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+                  border-radius: 8px; padding: 7px 9px; width: 100%; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer;
+           background: var(--line); color: var(--text); }
+  button.primary { background: var(--accent); color: #fff; font-weight: 600; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 3px; }
+  .x { background: none; color: var(--muted); padding: 2px 8px; }
+  .ev { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+  .ev:last-child { border-bottom: 0; }
+  .ev .t { color: var(--accent); font-variant-numeric: tabular-nums; flex: 0 0 110px; }
+  .muted { color: var(--muted); }
+  .err { color: #d9534f; font-size: 12.5px; }
+  .actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .check { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+  .check input { width: auto; }
+  .saved { color: var(--muted); align-self: center; margin-right: auto; }
+</style>
+</head>
+<body>
+<header>
+  <svg width="48" height="30" viewBox="0 0 16 10">
+    <path fill="#D97757" d="M2 0h12v2H2zM2 3h2v2H2zM7 3h2v2H7zM12 3h2v2h-2zM0 5h16v2H0zM2 7h12v1H2zM3 8h1v2H3zM5 8h1v2H5zM10 8h1v2h-1zM12 8h1v2h-1z"/>
+    <path fill="#000" d="M2 2h12v1H2zM4 3h3v2H4zM9 3h3v2H9z"/>
+  </svg>
+  <h1>Clawd-нагадувач</h1>
+</header>
+
+<section>
+  <h2>Нагадування</h2>
+  <div class="grid">
+    <div>
+      <label>За скільки хвилин нагадувати (через кому)</label>
+      <input id="leads" placeholder="30, 5">
+    </div>
+    <div>
+      <label>Звідки вилазить Clawd</label>
+      <select id="side">
+        <option value="random">Звідусіль (випадково)</option>
+        <option value="bottom">Знизу</option>
+        <option value="top">Згори</option>
+        <option value="left">Зліва</option>
+        <option value="right">Справа</option>
+      </select>
+    </div>
+    <div>
+      <label>Скільки секунд показувати</label>
+      <input id="seconds" type="number" min="2" max="60">
+    </div>
+  </div>
+  <label class="check"><input type="checkbox" id="login"> Запускати разом із комп'ютером</label>
+</section>
+
+<div class="actions" style="margin-bottom:14px">
+  <span class="saved" id="saved"></span>
+  <button id="test">👀 Показати Clawd</button>
+  <button class="primary" id="save">Зберегти</button>
+</div>
+
+<section>
+  <h2 style="display:flex;justify-content:space-between">Найближчі події <button class="x" id="refresh" title="Оновити">⟳</button></h2>
+  <div id="errors"></div>
+  <button id="openPrivacy" hidden style="margin:6px 0 8px">Відкрити налаштування доступу</button>
+  <div id="events" class="muted">Завантаження…</div>
+</section>
+
+<script>
+const $ = id => document.getElementById(id);
+
+async function renderEvents() {
+  const { events, errors, lastSync } = await api.getEvents();
+  $('openPrivacy').hidden = !errors.some(e => e.startsWith('Немає доступу до Календаря'));
+  $('errors').innerHTML = '';
+  errors.forEach(e => { const d = document.createElement('div'); d.className = 'err'; d.textContent = '⚠️ ' + e; $('errors').appendChild(d); });
+  if (!events.length) {
+    $('events').classList.add('muted');
+    $('events').textContent = lastSync ? 'Найближчим тижнем подій немає' : 'Завантаження…';
+    return;
+  }
+  $('events').innerHTML = '';
+  $('events').classList.remove('muted');
+  const fmt = new Intl.DateTimeFormat('uk-UA', { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  events.forEach(e => {
+    const d = document.createElement('div');
+    d.className = 'ev';
+    d.innerHTML = '<span class="t"></span><span class="n"></span><span class="muted" style="margin-left:auto;font-size:12px"></span>';
+    d.querySelector('.t').textContent = fmt.format(new Date(e.start));
+    d.querySelector('.n').textContent = e.title;
+    d.querySelector('.muted').textContent = e.calendar || '';
+    $('events').appendChild(d);
+  });
+}
+
+async function save() {
+  $('saved').textContent = 'Зберігаю…';
+  const cfg = await api.saveConfig({
+    leads: $('leads').value.split(/[,; ]+/).filter(Boolean).map(Number).filter(n => !isNaN(n)),
+    side: $('side').value,
+    showSeconds: Math.max(2, Math.min(60, Number($('seconds').value) || 7)),
+    launchAtLogin: $('login').checked,
+  });
+  $('leads').value = cfg.leads.join(', ');
+  $('saved').textContent = 'Збережено ✓';
+  setTimeout(() => ($('saved').textContent = ''), 2000);
+  renderEvents();
+}
+
+$('save').onclick = save;
+$('test').onclick = () => api.test();
+$('openPrivacy').onclick = () => api.openPrivacy();
+$('refresh').onclick = async () => { $('events').textContent = 'Оновлюю…'; await api.refresh(); renderEvents(); };
+api.onEventsUpdated(renderEvents);
+
+(async () => {
+  const cfg = await api.getConfig();
+  $('leads').value = cfg.leads.join(', ');
+  $('side').value = cfg.side;
+  $('seconds').value = cfg.showSeconds;
+  $('login').checked = cfg.launchAtLogin;
+  renderEvents();
+})();
+</script>
+</body>
+</html>
