@@ -17,7 +17,8 @@ const DEFAULT_CONFIG = {
   calendars: [], // [{ name, url }] — додаткові календарі за iCal-посиланням
   leads: [30, 5], // за скільки хвилин нагадувати
   side: 'random', // random | left | right | top | bottom
-  clawd: 'classic', // який Clawd: classic | bare | pink | angry | kind | sleepy | random
+  clawdColor: 'classic', // колір Clawd (див. src/clawds.js) або random
+  clawdEmotion: 'cool', // емоція Clawd (див. src/clawds.js) або random
   showSeconds: 7,
   launchAtLogin: false,
   interceptNotifications: notif.supported, // показувати Clawd замість банерів сповіщень
@@ -200,7 +201,8 @@ function showNext() {
   const b = display.workArea;
   const sides = ['left', 'right', 'top', 'bottom'];
   const side = config.side === 'random' ? sides[Math.floor(Math.random() * 4)] : config.side;
-  const clawd = Clawds.VARIANTS[config.clawd] ? config.clawd : Clawds.ids[Math.floor(Math.random() * Clawds.ids.length)];
+  const color = Clawds.pick(Clawds.COLORS, config.clawdColor);
+  const emotion = Clawds.pick(Clawds.EMOTIONS, config.clawdEmotion);
 
   overlayWin = new BrowserWindow({
     x: b.x, y: b.y, width: b.width, height: b.height,
@@ -215,7 +217,7 @@ function showNext() {
   overlayWin.loadFile(path.join(__dirname, 'overlay.html'));
   overlayWin.webContents.once('did-finish-load', () => {
     overlayWin.showInactive();
-    overlayWin.webContents.send('overlay:show', { ...item, side, clawd, seconds: config.showSeconds });
+    overlayWin.webContents.send('overlay:show', { ...item, side, color, emotion, seconds: config.showSeconds });
   });
   overlayWin.on('closed', () => {
     overlayWin = null;
@@ -305,6 +307,11 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     config = { ...DEFAULT_CONFIG, ...readJson(userFile('config.json'), {}) };
     fired = readJson(userFile('fired.json'), {});
+    // старе налаштування «clawd» → колір + емоція
+    const OLD = { classic: ['classic', 'cool'], bare: ['classic', 'neutral'], pink: ['pink', 'cool'],
+      angry: ['red', 'angry'], kind: ['classic', 'kind'], sleepy: ['classic', 'sleepy'], random: ['random', 'random'] };
+    if (config.clawd && OLD[config.clawd]) [config.clawdColor, config.clawdEmotion] = OLD[config.clawd];
+    delete config.clawd;
     // старі налаштування: слова «Календар/Calendar/Duet» тепер є джерелами
     config.interceptKeywords = (config.interceptKeywords || []).filter(
       (k) => !['календар', 'calendar', 'duet'].includes(String(k).toLowerCase())

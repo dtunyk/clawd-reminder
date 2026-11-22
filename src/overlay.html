@@ -69,12 +69,13 @@ function walk(on) {
   if (on) walkTimer = setInterval(() => crab.classList.toggle('step'), 110);
 }
 
-async function show({ when, title, time, note, side, seconds, clawd }) {
-  const v = Clawds.VARIANTS[clawd] || Clawds.VARIANTS.classic;
-  anchor.innerHTML = Clawds.svg(clawd, { cell: CELL, id: 'crab' });
+async function show({ when, title, time, note, side, seconds, color, emotion }) {
+  const c = Clawds.COLORS[color] || Clawds.COLORS.classic;
+  const e = Clawds.EMOTIONS[emotion] || Clawds.EMOTIONS.cool;
+  anchor.innerHTML = Clawds.svg(color, emotion, { cell: CELL, id: 'crab' });
   crab = document.getElementById('crab');
-  document.getElementById('greet').textContent = v.greet[Math.floor(Math.random() * v.greet.length)];
-  document.getElementById('when').style.color = v.color;
+  document.getElementById('greet').textContent = e.greet[Math.floor(Math.random() * e.greet.length)];
+  document.getElementById('when').style.color = c.text;
   document.getElementById('when').textContent = when;
   document.getElementById('title').textContent = title;
   document.getElementById('time').textContent = time ? `початок о ${time}` : (note || '');
