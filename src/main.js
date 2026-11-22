@@ -5,6 +5,7 @@ const { loadAll } = require('./calendar');
 const systemCal = require('./systemCalendar');
 const notif = require('./notifWatcher');
 const { clawdPng } = require('./clawd');
+const Clawds = require('./clawds');
 
 const CHECK_EVERY_MS = 15 * 1000; // як часто перевіряємо, чи пора нагадувати
 const SYNC_EVERY_MS = 2 * 60 * 1000; // як часто читаємо Календар Mac (він локальний, це дешево)
@@ -16,6 +17,7 @@ const DEFAULT_CONFIG = {
   calendars: [], // [{ name, url }] — додаткові календарі за iCal-посиланням
   leads: [30, 5], // за скільки хвилин нагадувати
   side: 'random', // random | left | right | top | bottom
+  clawd: 'classic', // який Clawd: classic | bare | pink | angry | kind | sleepy | random
   showSeconds: 7,
   launchAtLogin: false,
   interceptNotifications: notif.supported, // показувати Clawd замість банерів сповіщень
@@ -198,6 +200,7 @@ function showNext() {
   const b = display.workArea;
   const sides = ['left', 'right', 'top', 'bottom'];
   const side = config.side === 'random' ? sides[Math.floor(Math.random() * 4)] : config.side;
+  const clawd = Clawds.VARIANTS[config.clawd] ? config.clawd : Clawds.ids[Math.floor(Math.random() * Clawds.ids.length)];
 
   overlayWin = new BrowserWindow({
     x: b.x, y: b.y, width: b.width, height: b.height,
@@ -212,7 +215,7 @@ function showNext() {
   overlayWin.loadFile(path.join(__dirname, 'overlay.html'));
   overlayWin.webContents.once('did-finish-load', () => {
     overlayWin.showInactive();
-    overlayWin.webContents.send('overlay:show', { ...item, side, seconds: config.showSeconds });
+    overlayWin.webContents.send('overlay:show', { ...item, side, clawd, seconds: config.showSeconds });
   });
   overlayWin.on('closed', () => {
     overlayWin = null;

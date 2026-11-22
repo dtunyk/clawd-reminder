@@ -2,7 +2,7 @@
 <html lang="uk">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
 <style>
   html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; }
   body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; }
@@ -14,6 +14,7 @@
     opacity: 0; transform: scale(.6); transition: opacity .2s, transform .25s cubic-bezier(.3,1.6,.6,1);
   }
   .bubble.show { opacity: 1; transform: scale(1); }
+  .bubble .greet { font-size: 13px; font-weight: 700; color: #888; margin-bottom: 2px; }
   .bubble .when { font-weight: 800; font-size: 20px; color: #D97757; }
   .bubble .title { font-size: 18px; font-weight: 600; margin-top: 4px; word-wrap: break-word; }
   .bubble .time { font-size: 13px; color: #666; margin-top: 6px; }
@@ -30,52 +31,20 @@
 <body>
 <div class="anchor" id="anchor"></div>
 <div class="bubble" id="bubble">
+  <div class="greet" id="greet"></div>
   <div class="when" id="when"></div>
   <div class="title" id="title"></div>
   <div class="time" id="time"></div>
   <div class="hint">клікни, щоб сховати</div>
 </div>
+<script src="clawds.js"></script>
 <script>
-const CELL = 12, COLS = 16, ROWS = 10;
-const W = COLS * CELL, H = ROWS * CELL;
-
-// Clawd: тіло, окуляри, руки та два кадри ніг
-const BODY = [
-  '..OOOOOOOOOOOO..',
-  '..OOOOOOOOOOOO..',
-  '..BBBBBBBBBBBB..',
-  '..OOBBBOOBBBOO..',
-  '..OOBBBOOBBBOO..',
-  '..OOOOOOOOOOOO..',
-  '..OOOOOOOOOOOO..',
-  '..OOOOOOOOOOOO..',
-];
-const ARMS = [[5, [0, 1, 14, 15]], [6, [0, 1, 14, 15]]];
-const LEGS_A = [[8, [3, 5, 10, 12]], [9, [3, 5, 10, 12]]];
-const LEGS_B = [[8, [3, 5, 10, 12]], [9, [3, 10]]];
-const COLOR = { O: '#D97757', B: '#000' };
-
-function rects(cells, color) {
-  return cells.map(([r, cs]) => cs.map(c => `<rect x="${c}" y="${r}" width="1" height="1" fill="${color}"/>`).join('')).join('');
-}
-function bodyRects() {
-  let s = '';
-  BODY.forEach((row, r) => [...row].forEach((ch, c) => {
-    if (ch !== '.') s += `<rect x="${c}" y="${r}" width="1.02" height="1.02" fill="${COLOR[ch]}"/>`;
-  }));
-  return s;
-}
-const svg = `<svg id="crab" width="${W}" height="${H}" viewBox="0 0 ${COLS} ${ROWS}">
-  ${bodyRects()}
-  <g class="arms">${rects(ARMS, COLOR.O)}</g>
-  <g class="legsA">${rects(LEGS_A, COLOR.O)}</g>
-  <g class="legsB">${rects(LEGS_B, COLOR.O)}</g>
-</svg>`;
+const CELL = 12;
+const W = 16 * CELL, H = 10 * CELL;
 
 const anchor = document.getElementById('anchor');
 const bubble = document.getElementById('bubble');
-anchor.innerHTML = svg;
-const crab = document.getElementById('crab');
+let crab; // поточний <svg> з Clawd
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -100,7 +69,12 @@ function walk(on) {
   if (on) walkTimer = setInterval(() => crab.classList.toggle('step'), 110);
 }
 
-async function show({ when, title, time, note, side, seconds }) {
+async function show({ when, title, time, note, side, seconds, clawd }) {
+  const v = Clawds.VARIANTS[clawd] || Clawds.VARIANTS.classic;
+  anchor.innerHTML = Clawds.svg(clawd, { cell: CELL, id: 'crab' });
+  crab = document.getElementById('crab');
+  document.getElementById('greet').textContent = v.greet[Math.floor(Math.random() * v.greet.length)];
+  document.getElementById('when').style.color = v.color;
   document.getElementById('when').textContent = when;
   document.getElementById('title').textContent = title;
   document.getElementById('time').textContent = time ? `початок о ${time}` : (note || '');

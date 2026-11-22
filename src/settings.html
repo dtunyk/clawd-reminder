@@ -2,7 +2,7 @@
 <html lang="uk">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
 <title>Clawd-нагадувач</title>
 <style>
   :root { --bg: #faf7f5; --card: #fff; --text: #1d1d1d; --muted: #777; --line: #e6e0dc; --accent: #D97757; }
@@ -34,6 +34,12 @@
   .check { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
   .check input { width: auto; }
   .saved { color: var(--muted); align-self: center; margin-right: auto; }
+  .clawds { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
+  .clawd-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px 8px;
+                border: 2px solid var(--line); border-radius: 10px; cursor: pointer; background: var(--bg); font-size: 12.5px; }
+  .clawd-card svg { width: 64px; height: 40px; }
+  .clawd-card.sel { border-color: var(--accent); }
+  .clawd-card .dice { font-size: 28px; line-height: 40px; height: 40px; }
   .sources { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }
   .sources .check { margin-top: 4px; }
 </style>
@@ -46,6 +52,11 @@
   </svg>
   <h1>Clawd-нагадувач</h1>
 </header>
+
+<section>
+  <h2>Який Clawd</h2>
+  <div id="clawds" class="clawds"></div>
+</section>
 
 <section>
   <h2>Нагадування</h2>
@@ -102,6 +113,7 @@
   <div id="events" class="muted">Завантаження…</div>
 </section>
 
+<script src="clawds.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 
@@ -130,6 +142,28 @@ async function renderEvents() {
   });
 }
 
+// Вибір Clawd: картки з картинками + «Випадковий»
+function renderClawds(selected) {
+  const box = $('clawds');
+  box.innerHTML = '';
+  for (const id of [...Clawds.ids, 'random']) {
+    const card = document.createElement('div');
+    card.className = 'clawd-card' + (id === selected ? ' sel' : '');
+    card.dataset.id = id;
+    card.title = 'Показати цього Clawd';
+    card.innerHTML = id === 'random' ? '<div class="dice">🎲</div>' : Clawds.svg(id, { cell: 4 });
+    const label = document.createElement('span');
+    label.textContent = id === 'random' ? 'Випадковий' : Clawds.VARIANTS[id].name;
+    card.appendChild(label);
+    card.onclick = async () => {
+      box.querySelectorAll('.clawd-card').forEach(c => c.classList.toggle('sel', c === card));
+      await save();
+      api.test();
+    };
+    box.appendChild(card);
+  }
+}
+
 function renderNotif(status) {
   const on = $('intercept').checked;
   $('sourcesBox').style.opacity = on ? 1 : 0.5;
@@ -149,6 +183,7 @@ async function save() {
     side: $('side').value,
     showSeconds: Math.max(2, Math.min(60, Number($('seconds').value) || 7)),
     launchAtLogin: $('login').checked,
+    clawd: document.querySelector('.clawd-card.sel')?.dataset.id || 'classic',
     interceptNotifications: $('intercept').checked,
     interceptSources: [...document.querySelectorAll('#sources input:checked')].map(i => i.value),
     interceptKeywords: $('keywords').value.split(',').map(k => k.trim()).filter(Boolean),
@@ -187,6 +222,7 @@ api.onEventsUpdated(renderEvents);
   $('side').value = cfg.side;
   $('seconds').value = cfg.showSeconds;
   $('login').checked = cfg.launchAtLogin;
+  renderClawds(cfg.clawd);
   const { systemSupported } = await api.getEvents();
   $('notifSection').hidden = !systemSupported;
   $('intercept').checked = cfg.interceptNotifications;
