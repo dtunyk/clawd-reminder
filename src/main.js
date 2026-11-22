@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { loadAll } = require('./calendar');
 const systemCal = require('./systemCalendar');
+const notif = require('./notifWatcher');
 const { clawdPng } = require('./clawd');
 
 const CHECK_EVERY_MS = 15 * 1000; // як часто перевіряємо, чи пора нагадувати
@@ -17,7 +18,32 @@ const DEFAULT_CONFIG = {
   side: 'random', // random | left | right | top | bottom
   showSeconds: 7,
   launchAtLogin: false,
+  interceptNotifications: notif.supported, // показувати Clawd замість банерів сповіщень
+  interceptSources: ['calendar', 'duet'], // звідки перехоплювати (див. SOURCES)
+  interceptKeywords: [], // додатково: будь-які сповіщення з цими словами
 };
+
+const BROWSERS = ['Google Chrome', 'Safari', 'Arc', 'Firefox', 'Microsoft Edge', 'Brave Browser', 'Opera', 'Chromium', 'Vivaldi'];
+// Джерела сповіщень: назви програм (як їх показує macOS) і, за потреби, слова в тексті
+const SOURCES = {
+  calendar: { label: 'Календар (Apple і Google)', apps: ['Calendar', 'Календар'] },
+  duet: { label: 'Claude Duet (у браузері)', apps: BROWSERS, words: ['duet', 'claude'] },
+  telegram: { label: 'Telegram', apps: ['Telegram'] },
+  viber: { label: 'Viber', apps: ['Viber'] },
+  discord: { label: 'Discord', apps: ['Discord'] },
+  zoom: { label: 'Zoom', apps: ['zoom.us', 'Zoom'] },
+  messages: { label: 'Повідомлення', apps: ['Messages', 'Повідомлення'] },
+  mail: { label: 'Пошта', apps: ['Mail', 'Пошта'] },
+  reminders: { label: 'Нагадування', apps: ['Reminders', 'Нагадування'] },
+};
+
+function watcherRules() {
+  const rules = (config.interceptSources || [])
+    .filter((k) => SOURCES[k])
+    .map((k) => ({ apps: SOURCES[k].apps, words: SOURCES[k].words || [] }));
+  if (config.interceptKeywords.length) rules.push({ apps: [], words: config.interceptKeywords });
+  return rules;
+}
 
 let config, tray, settingsWin, overlayWin;
 let events = [];
@@ -27,6 +53,7 @@ let systemCalendars = [];
 let ics = { events: [], errors: [], at: 0, key: '' }; // кеш календарів за посиланням
 const queue = [];
 let fired = {};
+let notifState = { status: 'off' };
 
 const userFile = (name) => path.join(app.getPath('userData'), name);
 
@@ -136,6 +163,33 @@ function check() {
   showNext();
 }
 
+// ---------- Перехоплення сповіщень ----------
+function startWatcher() {
+  notif.stop();
+  notifState = { status: 'off' };
+  const rules = watcherRules();
+  if (!config.interceptNotifications || !notif.supported || !rules.length) return;
+  const dumpFile = process.env.CLAWD_NOTIF_DUMP ? userFile('notif-dump.log') : null;
+  notif.start({
+    rules,
+    onStatus: (st) => {
+      notifState = st;
+      if (settingsWin) settingsWin.webContents.send('events-updated');
+    },
+    onNotification: (n, closed) => {
+      const fallback = n.desc.split(', ').slice(1);
+      const title = n.title || fallback[0] || 'Сповіщення';
+      const body = [n.subtitle, n.body].filter(Boolean).join(' · ') || fallback.slice(1).join(', ');
+      queue.push({ when: title, title: body, note: n.app });
+      if (dumpFile) fs.appendFileSync(dumpFile, JSON.stringify({ at: new Date().toISOString(), ...n, closed }) + '\n');
+      showNext();
+    },
+    onDump: dumpFile
+      ? (tree) => fs.appendFileSync(dumpFile, JSON.stringify({ at: new Date().toISOString(), tree }) + '\n')
+      : undefined,
+  });
+}
+
 // ---------- Вікно з Clawd ----------
 function showNext() {
   if (overlayWin || !queue.length) return;
@@ -187,8 +241,13 @@ function openSettings() {
 }
 
 ipcMain.handle('config:get', () => config);
+ipcMain.handle('sources:get', () => Object.entries(SOURCES).map(([id, s]) => ({ id, label: s.label })));
 ipcMain.handle('config:save', async (_e, next) => {
+  const prevWatch = JSON.stringify([config.interceptNotifications, config.interceptSources, config.interceptKeywords]);
   config = { ...config, ...next };
+  config.interceptKeywords = (config.interceptKeywords || []).map((k) => String(k).trim()).filter(Boolean);
+  config.interceptSources = (config.interceptSources || []).filter((k) => SOURCES[k]);
+  if (JSON.stringify([config.interceptNotifications, config.interceptSources, config.interceptKeywords]) !== prevWatch) startWatcher();
   config.leads = [...new Set(config.leads.map(Number).filter((n) => n >= 0))].sort((a, b) => b - a);
   saveConfig();
   if (process.platform !== 'linux') {
@@ -203,12 +262,23 @@ ipcMain.handle('events:get', () => ({
   lastSync,
   systemCalendars,
   systemSupported: systemCal.supported,
+  notifStatus: notifState.status,
 }));
 ipcMain.handle('events:refresh', () => sync(true).catch(() => {}));
-ipcMain.handle('open-privacy', () =>
-  require('electron').shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars')
+ipcMain.handle('open-privacy', (_e, what) =>
+  require('electron').shell.openExternal(
+    'x-apple.systempreferences:com.apple.preference.security?' +
+      (what === 'accessibility' ? 'Privacy_Accessibility' : 'Privacy_Calendars')
+  )
 );
 ipcMain.handle('test', () => testReminder());
+ipcMain.handle('test-notif', () => testNotification());
+
+// Перевірка перехоплення: «Календар» надішле справжній банер через хвилину.
+// (Власні сповіщення програма без сертифіката Apple надсилати не може.)
+function testNotification() {
+  return systemCal.createTestEvent();
+}
 
 function testReminder() {
   const next = events.find((e) => e.start > Date.now());
@@ -224,11 +294,18 @@ function testReminder() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', openSettings);
+  app.on('second-instance', (_e, argv) => {
+    if (argv.includes('--test-notif')) return testNotification();
+    openSettings();
+  });
 
   app.whenReady().then(() => {
     config = { ...DEFAULT_CONFIG, ...readJson(userFile('config.json'), {}) };
     fired = readJson(userFile('fired.json'), {});
+    // старі налаштування: слова «Календар/Calendar/Duet» тепер є джерелами
+    config.interceptKeywords = (config.interceptKeywords || []).filter(
+      (k) => !['календар', 'calendar', 'duet'].includes(String(k).toLowerCase())
+    );
     config.useSystemCalendar = systemCal.supported; // Календар Mac завжди увімкнений
 
     if (process.platform === 'darwin') app.dock.hide();
@@ -246,6 +323,7 @@ if (!app.requestSingleInstanceLock()) {
       { label: 'Вийти', click: () => app.quit() },
     ]));
 
+    startWatcher();
     sync().catch(() => {}).finally(check);
     setInterval(() => sync().catch(() => {}), SYNC_EVERY_MS);
     setInterval(check, CHECK_EVERY_MS);
@@ -257,6 +335,8 @@ if (!app.requestSingleInstanceLock()) {
     }
     if (process.argv.includes('--test')) setTimeout(testReminder, 500);
   });
+
+  app.on('will-quit', () => notif.stop());
 
   // програма живе в треї, тож не виходимо після закриття вікон
   app.on('window-all-closed', () => {});

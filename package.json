@@ -52,6 +52,10 @@
         {
           "from": "build/bin/calendar-helper",
           "to": "calendar-helper"
+        },
+        {
+          "from": "build/bin/Clawd Watcher",
+          "to": "Clawd Watcher"
         }
       ]
     },

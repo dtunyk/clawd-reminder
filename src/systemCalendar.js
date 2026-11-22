@@ -35,4 +35,25 @@ function loadSystemEvents(daysAhead = 7) {
   });
 }
 
-module.exports = { supported, loadSystemEvents };
+// Створює тимчасову подію з нагадуванням через хвилину (для перевірки перехоплення).
+// Помічник сам видаляє подію приблизно через 2,5 хвилини.
+function createTestEvent() {
+  return new Promise((resolve) => {
+    if (!supported) return resolve({ ok: false, error: 'Лише для macOS' });
+    const bin = helperPath();
+    if (!fs.existsSync(bin)) return resolve({ ok: false, error: 'Не знайдено calendar-helper' });
+    const child = execFile(bin, ['--test-event'], { timeout: 4 * 60 * 1000 }, () => {});
+    let buf = '';
+    child.stdout.on('data', (d) => {
+      buf += d;
+      const line = buf.split('\n')[0];
+      try {
+        const data = JSON.parse(line);
+        resolve(data.ok ? { ok: true, local: data.local } : { ok: false, error: data.error === 'denied' ? DENIED_MSG : data.error });
+      } catch {}
+    });
+    child.on('exit', () => resolve({ ok: false, error: 'Не вдалося створити тестову подію' }));
+  });
+}
+
+module.exports = { supported, loadSystemEvents, createTestEvent };

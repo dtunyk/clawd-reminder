@@ -34,6 +34,8 @@
   .check { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
   .check input { width: auto; }
   .saved { color: var(--muted); align-self: center; margin-right: auto; }
+  .sources { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; }
+  .sources .check { margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -70,6 +72,23 @@
   <label class="check"><input type="checkbox" id="login"> Запускати разом із комп'ютером</label>
 </section>
 
+<section id="notifSection" hidden>
+  <h2>Замість сповіщень</h2>
+  <label class="check" style="margin-top:0"><input type="checkbox" id="intercept"> Clawd вилазить замість банерів сповіщень</label>
+  <div id="sourcesBox">
+    <label style="margin-top:12px">Звідки перехоплювати</label>
+    <div id="sources" class="sources"></div>
+    <div style="margin-top:10px">
+      <label>Інші сповіщення, що містять слова (через кому, необов'язково)</label>
+      <input id="keywords" placeholder="напр. урок, дедлайн">
+    </div>
+  </div>
+  <div id="notifStatus" class="muted" style="margin-top:8px"></div>
+  <button id="openAccess" hidden style="margin-top:8px">Відкрити «Універсальний доступ»</button>
+  <button id="testNotif" style="margin-top:8px">🔔 Перевірити перехоплення</button>
+  <div id="testResult" class="muted" style="margin-top:6px"></div>
+</section>
+
 <div class="actions" style="margin-bottom:14px">
   <span class="saved" id="saved"></span>
   <button id="test">👀 Показати Clawd</button>
@@ -87,7 +106,8 @@
 const $ = id => document.getElementById(id);
 
 async function renderEvents() {
-  const { events, errors, lastSync } = await api.getEvents();
+  const { events, errors, lastSync, notifStatus } = await api.getEvents();
+  renderNotif(notifStatus);
   $('openPrivacy').hidden = !errors.some(e => e.startsWith('Немає доступу до Календаря'));
   $('errors').innerHTML = '';
   errors.forEach(e => { const d = document.createElement('div'); d.className = 'err'; d.textContent = '⚠️ ' + e; $('errors').appendChild(d); });
@@ -110,6 +130,18 @@ async function renderEvents() {
   });
 }
 
+function renderNotif(status) {
+  const on = $('intercept').checked;
+  $('sourcesBox').style.opacity = on ? 1 : 0.5;
+  $('openAccess').hidden = !(on && status === 'no-permission');
+  $('notifStatus').className = status === 'no-permission' && on ? 'err' : 'muted';
+  $('notifStatus').textContent = !on ? 'Вимкнено'
+    : status === 'ready' ? '✓ Працює'
+    : status === 'no-permission' ? '⚠️ Потрібен дозвіл: Системні параметри → Приватність і безпека → Універсальний доступ → увімкніть Clawd Watcher'
+    : status === 'error' ? '⚠️ Не вдалося запустити перехоплення'
+    : 'Запускаю…';
+}
+
 async function save() {
   $('saved').textContent = 'Зберігаю…';
   const cfg = await api.saveConfig({
@@ -117,7 +149,11 @@ async function save() {
     side: $('side').value,
     showSeconds: Math.max(2, Math.min(60, Number($('seconds').value) || 7)),
     launchAtLogin: $('login').checked,
+    interceptNotifications: $('intercept').checked,
+    interceptSources: [...document.querySelectorAll('#sources input:checked')].map(i => i.value),
+    interceptKeywords: $('keywords').value.split(',').map(k => k.trim()).filter(Boolean),
   });
+  $('keywords').value = cfg.interceptKeywords.join(', ');
   $('leads').value = cfg.leads.join(', ');
   $('saved').textContent = 'Збережено ✓';
   setTimeout(() => ($('saved').textContent = ''), 2000);
@@ -126,7 +162,22 @@ async function save() {
 
 $('save').onclick = save;
 $('test').onclick = () => api.test();
-$('openPrivacy').onclick = () => api.openPrivacy();
+$('openPrivacy').onclick = () => api.openPrivacy('calendars');
+$('openAccess').onclick = () => api.openPrivacy('accessibility');
+$('intercept').onchange = save;
+$('testNotif').onclick = async () => {
+  $('testNotif').disabled = true;
+  $('testResult').className = 'muted';
+  $('testResult').textContent = 'Створюю тестову подію…';
+  const r = await api.testNotif();
+  if (r.ok) {
+    $('testResult').textContent = '✓ Через ~1 хвилину «Календар» надішле сповіщення «Clawd тест 🦀» — замість банера має вилізти Clawd. Подія видалиться сама.';
+  } else {
+    $('testResult').className = 'err';
+    $('testResult').textContent = '⚠️ ' + r.error;
+  }
+  setTimeout(() => ($('testNotif').disabled = false), 60000);
+};
 $('refresh').onclick = async () => { $('events').textContent = 'Оновлюю…'; await api.refresh(); renderEvents(); };
 api.onEventsUpdated(renderEvents);
 
@@ -136,6 +187,20 @@ api.onEventsUpdated(renderEvents);
   $('side').value = cfg.side;
   $('seconds').value = cfg.showSeconds;
   $('login').checked = cfg.launchAtLogin;
+  const { systemSupported } = await api.getEvents();
+  $('notifSection').hidden = !systemSupported;
+  $('intercept').checked = cfg.interceptNotifications;
+  $('keywords').value = cfg.interceptKeywords.join(', ');
+  for (const s of await api.getSources()) {
+    const l = document.createElement('label');
+    l.className = 'check';
+    l.innerHTML = '<input type="checkbox"> <span></span>';
+    l.querySelector('input').value = s.id;
+    l.querySelector('input').checked = cfg.interceptSources.includes(s.id);
+    l.querySelector('input').onchange = save;
+    l.querySelector('span').textContent = s.label;
+    $('sources').appendChild(l);
+  }
   renderEvents();
 })();
 </script>

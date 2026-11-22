@@ -34,6 +34,39 @@ if !granted {
     output(["error": "denied"], code: 2)
 }
 
+// Тест перехоплення: тимчасова подія з нагадуванням через хвилину, яка потім сама видаляється.
+// Спершу пробуємо локальний календар «На Mac» (не синхронізується з телефоном).
+if CommandLine.arguments.contains("--test-event") {
+    var tempCalendar: EKCalendar? = nil
+    if let local = store.sources.first(where: { $0.sourceType == .local }) {
+        let cal = EKCalendar(for: .event, eventStore: store)
+        cal.title = "Clawd тест"
+        cal.source = local
+        if (try? store.saveCalendar(cal, commit: true)) != nil { tempCalendar = cal }
+    }
+    guard let calendar = tempCalendar ?? store.defaultCalendarForNewEvents else {
+        output(["error": "no-calendar"], code: 3)
+    }
+    let ev = EKEvent(eventStore: store)
+    ev.title = "Clawd тест 🦀"
+    ev.calendar = calendar
+    ev.startDate = Date().addingTimeInterval(60)
+    ev.endDate = ev.startDate.addingTimeInterval(5 * 60)
+    ev.addAlarm(EKAlarm(relativeOffset: 0))
+    do {
+        try store.save(ev, span: .thisEvent, commit: true)
+    } catch {
+        output(["error": "save-failed: \(error.localizedDescription)"], code: 4)
+    }
+    print("{\"ok\":true,\"local\":\(tempCalendar != nil)}")
+    fflush(stdout)
+    // чекаємо, поки спрацює нагадування, і прибираємо за собою
+    Thread.sleep(forTimeInterval: 150)
+    try? store.remove(ev, span: .thisEvent, commit: true)
+    if let cal = tempCalendar { try? store.removeCalendar(cal, commit: true) }
+    exit(0)
+}
+
 // 2. Події від "годину тому" до "days днів уперед"
 let from = Date().addingTimeInterval(-3600)
 let to = Date().addingTimeInterval(days * 86400)

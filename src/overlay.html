@@ -100,10 +100,10 @@ function walk(on) {
   if (on) walkTimer = setInterval(() => crab.classList.toggle('step'), 110);
 }
 
-async function show({ when, title, time, side, seconds }) {
+async function show({ when, title, time, note, side, seconds }) {
   document.getElementById('when').textContent = when;
   document.getElementById('title').textContent = title;
-  document.getElementById('time').textContent = time ? `початок о ${time}` : '';
+  document.getElementById('time').textContent = time ? `початок о ${time}` : (note || '');
 
   const vw = innerWidth, vh = innerHeight;
   const vertical = side === 'left' || side === 'right';
